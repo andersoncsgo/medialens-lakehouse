@@ -12,7 +12,7 @@ def vote_changes_query(snapshots, movies):
                 LEAD(observed_at) OVER by_movie AS previous_observed_at,
                 LEAD(vote_count) OVER by_movie AS previous_vote_count,
                 ROW_NUMBER() OVER by_movie AS position
-            FROM {snapshots}
+            FROM {snapshots} AS snapshots
             WINDOW by_movie AS (
                 PARTITION BY source, tmdb_id
                 ORDER BY observed_at DESC, run_id DESC
@@ -37,7 +37,7 @@ def quality_query(candidate, snapshots):
             SELECT *, COUNT(*) OVER (PARTITION BY source, tmdb_id) AS key_count
             FROM {candidate}
         ), eligible AS (
-            SELECT source, tmdb_id FROM {snapshots}
+            SELECT source, tmdb_id FROM {snapshots} AS snapshots
             GROUP BY source, tmdb_id HAVING COUNT(DISTINCT run_id) >= 2
         ), summary AS (
             SELECT
@@ -69,13 +69,13 @@ def rebuild_tmdb_vote_changes(spark, catalog, silver_schema, gold_schema):
     gold = f"`{catalog}`.`{gold_schema}`"
     table = f"{gold}.`tmdb_vote_changes`"
 
-    def versioned(table_name, alias):
+    def versioned(table_name):
         qualified = f"{silver}.`{table_name}`"
         version = spark.sql(f"DESCRIBE HISTORY {qualified} LIMIT 1").first()["version"]
-        return f"(SELECT * FROM {qualified} VERSION AS OF {version}) AS {alias}"
+        return f"(SELECT * FROM {qualified} VERSION AS OF {version})"
 
-    snapshots = versioned("tmdb_rating_snapshots", "snapshots")
-    movies = versioned("tmdb_movies", "movies")
+    snapshots = versioned("tmdb_rating_snapshots")
+    movies = versioned("tmdb_movies")
     candidate = "_medialens_tmdb_gold_candidate"
     spark.sql(vote_changes_query(snapshots, movies)).createOrReplaceTempView(candidate)
     try:
