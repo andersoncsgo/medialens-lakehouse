@@ -33,15 +33,15 @@ O job `tmdb_bronze_ingestion` executa as três camadas em sequência. A Bronze u
 
 Pré-requisitos: [CLI autenticado com o perfil `medialens-dev`](docs/databricks-connection.md), compute serverless, acesso de escrita no catálogo `workspace` e token TMDB no segredo `medialens-api/tmdb-read-token`.
 
-Na raiz do projeto, no PowerShell:
+**1. Publique e execute o job TMDB primeiro.** Na raiz do projeto, use o PowerShell:
 
 ```powershell
 databricks bundle validate -t dev --profile medialens-dev
-databricks bundle deploy -t dev --profile medialens-dev
+databricks bundle deploy -t dev --profile medialens-dev --select jobs.tmdb_bronze_ingestion
 databricks bundle run tmdb_bronze_ingestion -t dev --profile medialens-dev
 ```
 
-O padrão é coletar uma página por execução. Após uma primeira coleta em um ambiente vazio, é normal a Gold ficar vazia. A tabela ganha linhas quando um filme aparece em duas coletas válidas. Abra o link da execução no Databricks para ver as três tarefas e as contagens registradas.
+Espere as três tarefas terminarem. O job cria os schemas Bronze, Silver e Gold e as tabelas TMDB que o MovieLens usa. O padrão é coletar uma página por execução. A tabela de variação de votos fica vazia até haver um filme com duas coletas válidas. Se alguma tarefa falhar, siga o [procedimento de reparo](docs/bronze-tmdb.md#reparar-uma-execução).
 
 ```sql
 SELECT title, previous_observed_at, current_observed_at,
@@ -49,6 +49,8 @@ SELECT title, previous_observed_at, current_observed_at,
 FROM workspace.medialens_gold.tmdb_vote_changes
 ORDER BY vote_count_change DESC NULLS LAST, title;
 ```
+
+**2. Instale o MovieLens.** Com a Silver da TMDB pronta, siga o [guia MovieLens](docs/movielens.md#executar) para publicar o volume e o pipeline, carregar os três CSVs e executar a carga. O volume precisa do schema Bronze criado na etapa anterior.
 
 ## Testes locais
 
