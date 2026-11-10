@@ -1,0 +1,20 @@
+bundle:
+  name: medialens_lakehouse
+
+include:
+  - resources/*.yml
+
+sync:
+  exclude:
+    - .github/**
+    - docs/**
+    - tests/**
+    - README.md
+    - AGENTS.md
+    - image.png
+    - ml-latest/**
+
+targets:
+  dev:
+    default: true
+    mode: development

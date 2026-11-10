@@ -1,0 +1,29 @@
+# Segredos e configuração local
+.env
+.env.*
+!.env.example
+.databrickscfg
+**/.databrickscfg
+secrets/
+*.pem
+*.key
+
+# Material pessoal de preparação para entrevistas
+/docs/roteiro-entrevista.md
+
+# Dados e artefatos
+/ml-latest/
+data/raw/**
+data/interim/**
+data/processed/**
+!data/**/README.md
+*.csv
+*.parquet
+*.jsonl
+.bundle/
+.databricks/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
