@@ -1,0 +1,10 @@
+resources:
+  volumes:
+    movielens_landing:
+      name: movielens_landing
+      catalog_name: workspace
+      schema_name: medialens_bronze
+      volume_type: MANAGED
+      comment: Arquivos MovieLens separados por edição. Carga privada para o projeto.
+      lifecycle:
+        prevent_destroy: true

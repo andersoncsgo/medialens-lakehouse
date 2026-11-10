@@ -1,0 +1,33 @@
+resources:
+  pipelines:
+    movielens_lakehouse:
+      name: medialens-movielens-lakehouse
+      catalog: workspace
+      schema: medialens_silver
+      serverless: true
+      continuous: false
+      libraries:
+        - file:
+            path: ../src/medialens/pipelines/movielens/bronze_movies.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/bronze_links.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/bronze_ratings.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/silver_movies.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/silver_links.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/silver_rating_candidates.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/silver_rating_events.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/silver_ratings.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/silver_rating_rejects.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/gold_movie_ratings.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/gold_tmdb_coverage.sql
+        - file:
+            path: ../src/medialens/pipelines/movielens/gold_quality.sql
