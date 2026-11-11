@@ -28,6 +28,6 @@ resources:
         - file:
             path: ../src/medialens/pipelines/movielens/gold_movie_ratings.sql
         - file:
-            path: ../src/medialens/pipelines/movielens/gold_tmdb_coverage.sql
+            path: ../src/medialens/pipelines/movielens/gold_movie_rating_history.sql
         - file:
             path: ../src/medialens/pipelines/movielens/gold_quality.sql

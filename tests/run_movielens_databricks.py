@@ -20,9 +20,7 @@ RELATIONS = {
     "workspace.medialens_silver.movielens_ratings": "ml_ratings",
     "workspace.medialens_silver.movielens_rating_rejects": "ml_rejects",
     "workspace.medialens_gold.movielens_movie_ratings": "ml_gold",
-    "workspace.medialens_gold.movielens_tmdb_coverage": "ml_coverage",
-    "workspace.medialens_silver.tmdb_movies": "tmdb_movies",
-    "workspace.medialens_silver.tmdb_rating_snapshots": "tmdb_snapshots",
+    "workspace.medialens_gold.movielens_movie_rating_history": "ml_history",
 }
 FLOW = (
     ("ml_movies", "silver_movies"),
@@ -32,7 +30,7 @@ FLOW = (
     ("ml_ratings", "silver_ratings"),
     ("ml_rejects", "silver_rating_rejects"),
     ("ml_gold", "gold_movie_ratings"),
-    ("ml_coverage", "gold_tmdb_coverage"),
+    ("ml_history", "gold_movie_rating_history"),
     ("ml_quality", "gold_quality"),
 )
 EXPECTED_ERROR = "MEDIALENS_TEST_INVALID_MOVIE"

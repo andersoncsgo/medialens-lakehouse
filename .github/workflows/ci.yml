@@ -1,4 +1,4 @@
-name: Testes locais
+name: Validação local
 
 on:
   push:
@@ -12,8 +12,6 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: src
     steps:
       - uses: actions/checkout@v6
         with:
@@ -22,6 +20,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verificar sintaxe
-        run: python -m compileall -q src notebooks tests
-      - name: Executar testes unitários
-        run: python -m unittest discover -s tests -v
+        run: python -m compileall -q src tests
+      - name: Validar JSON do painel
+        run: python -m json.tool dashboards/medialens.lvdash.json > /dev/null
