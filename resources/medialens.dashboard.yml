@@ -1,0 +1,7 @@
+resources:
+  dashboards:
+    medialens_analytics:
+      display_name: MediaLens | Evolução e qualidade
+      file_path: ../dashboards/medialens.lvdash.json
+      warehouse_id: ${var.dashboard_warehouse_id}
+      embed_credentials: false

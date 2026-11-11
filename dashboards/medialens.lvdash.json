@@ -1,0 +1,880 @@
+{
+  "datasets": [
+    {
+      "name": "historico",
+      "displayName": "Histórico mensal por filme",
+      "queryLines": [
+        "SELECT concat(r.title, ' · ', cast(r.movie_id AS STRING)) AS filme,\n",
+        "       h.rating_month AS mes, h.rating_count AS avaliacoes,\n",
+        "       h.cumulative_rating_count AS avaliacoes_acumuladas,\n",
+        "       round(h.monthly_average_rating, 3) AS nota_mensal,\n",
+        "       round(h.cumulative_average_rating, 3) AS nota_acumulada\n",
+        "FROM workspace.medialens_gold.movielens_movie_rating_history h\n",
+        "JOIN workspace.medialens_gold.movielens_movie_ratings r USING (dataset_version, source, movie_id, scale_min, scale_max)\n",
+        "WHERE h.dataset_version = 'ml-latest-2023-07-20' AND h.source = 'movielens'"
+      ]
+    },
+    {
+      "name": "generos",
+      "displayName": "Notas e volume por gênero",
+      "queryLines": [
+        "SELECT genero, count(*) AS filmes, sum(rating_count) AS avaliacoes,\n",
+        "       round(try_divide(sum(rating_sum), sum(rating_count)), 3) AS nota_media\n",
+        "FROM workspace.medialens_gold.movielens_movie_ratings\n",
+        "LATERAL VIEW explode(genres) g AS genero\n",
+        "WHERE dataset_version = 'ml-latest-2023-07-20' AND source = 'movielens'\n",
+        "GROUP BY genero"
+      ]
+    },
+    {
+      "name": "ranking",
+      "displayName": "Filmes mais bem avaliados",
+      "queryLines": [
+        "SELECT title AS filme, movie_id, round(average_rating, 3) AS nota_media,\n",
+        "       rating_count AS avaliacoes, CAST(first_rated_at AS DATE) AS primeira_avaliacao,\n",
+        "       CAST(last_rated_at AS DATE) AS ultima_avaliacao\n",
+        "FROM workspace.medialens_gold.movielens_movie_ratings\n",
+        "WHERE dataset_version = 'ml-latest-2023-07-20' AND source = 'movielens' AND rating_count >= 100\n",
+        "ORDER BY average_rating DESC, rating_count DESC, movie_id\n",
+        "LIMIT 20"
+      ]
+    },
+    {
+      "name": "auditoria",
+      "displayName": "Reconciliação por camada",
+      "queryLines": [
+        "SELECT bronze_rows AS bronze, silver_events AS silver,\n",
+        "       gold_events AS gold_por_filme, history_events AS gold_por_mes,\n",
+        "       rejected_rows AS rejeitadas, exact_duplicate_rows AS copias, gold_films AS filmes\n",
+        "FROM workspace.medialens_gold.movielens_quality\n",
+        "WHERE dataset_version = 'ml-latest-2023-07-20'"
+      ]
+    },
+    {
+      "name": "rejeicoes",
+      "displayName": "Linhas rejeitadas por regra",
+      "queryLines": [
+        "SELECT rejection_reason AS regra, sum(source_row_count) AS linhas\n",
+        "FROM workspace.medialens_silver.movielens_rating_rejects\n",
+        "WHERE dataset_version = 'ml-latest-2023-07-20' AND source = 'movielens'\n",
+        "GROUP BY rejection_reason"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "catalogo",
+      "displayName": "Catálogo e gêneros",
+      "layout": [
+        {
+          "widget": {
+            "name": "total_avaliacoes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "auditoria",
+                  "fields": [
+                    {
+                      "name": "gold_por_filme",
+                      "expression": "`gold_por_filme`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Avaliações válidas",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "gold_por_filme"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "total_filmes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "auditoria",
+                  "fields": [
+                    {
+                      "name": "filmes",
+                      "expression": "`filmes`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Filmes com avaliações",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "filmes"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "nota_genero",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "generos",
+                  "fields": [
+                    {
+                      "name": "nota_media",
+                      "expression": "`nota_media`"
+                    },
+                    {
+                      "name": "genero",
+                      "expression": "`genero`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Nota média por gênero",
+                  "fields": []
+                },
+                "showDescription": true,
+                "description": {
+                  "value": "Cada avaliação tem o mesmo peso dentro do gênero.",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "nota_media",
+                  "scale": {
+                    "type": "quantitative",
+                    "domain": {
+                      "min": 0,
+                      "max": 5
+                    }
+                  },
+                  "axis": {
+                    "title": "Nota em estrelas"
+                  }
+                },
+                "y": {
+                  "fieldName": "genero",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "axis": {
+                    "title": "Gênero"
+                  }
+                }
+              },
+              "mark": {
+                "colors": [
+                  "#2563EB"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "volume_genero",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "generos",
+                  "fields": [
+                    {
+                      "name": "avaliacoes",
+                      "expression": "`avaliacoes`"
+                    },
+                    {
+                      "name": "genero",
+                      "expression": "`genero`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Avaliações por gênero",
+                  "fields": []
+                },
+                "showDescription": true,
+                "description": {
+                  "value": "Um filme pode participar de vários gêneros.",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "avaliacoes",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "Avaliações"
+                  }
+                },
+                "y": {
+                  "fieldName": "genero",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "axis": {
+                    "title": "Gênero"
+                  }
+                }
+              },
+              "mark": {
+                "colors": [
+                  "#059669"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top_filmes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ranking",
+                  "fields": [
+                    {
+                      "name": "filme",
+                      "expression": "`filme`"
+                    },
+                    {
+                      "name": "movie_id",
+                      "expression": "`movie_id`"
+                    },
+                    {
+                      "name": "nota_media",
+                      "expression": "`nota_media`"
+                    },
+                    {
+                      "name": "avaliacoes",
+                      "expression": "`avaliacoes`"
+                    },
+                    {
+                      "name": "primeira_avaliacao",
+                      "expression": "`primeira_avaliacao`"
+                    },
+                    {
+                      "name": "ultima_avaliacao",
+                      "expression": "`ultima_avaliacao`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "expression": "nota_media",
+                      "direction": "DESC"
+                    },
+                    {
+                      "expression": "avaliacoes",
+                      "direction": "DESC"
+                    },
+                    {
+                      "expression": "movie_id",
+                      "direction": "ASC"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "20 filmes com as maiores notas",
+                  "fields": []
+                },
+                "showDescription": true,
+                "description": {
+                  "value": "Mínimo de 100 avaliações por filme.",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "filme",
+                    "displayName": "Filme"
+                  },
+                  {
+                    "fieldName": "movie_id",
+                    "displayName": "ID MovieLens"
+                  },
+                  {
+                    "fieldName": "nota_media",
+                    "displayName": "Nota média"
+                  },
+                  {
+                    "fieldName": "avaliacoes",
+                    "displayName": "Avaliações"
+                  },
+                  {
+                    "fieldName": "primeira_avaliacao",
+                    "displayName": "Primeira avaliação"
+                  },
+                  {
+                    "fieldName": "ultima_avaliacao",
+                    "displayName": "Última avaliação"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "historico_filme",
+      "displayName": "Histórico por filme",
+      "layout": [
+        {
+          "widget": {
+            "name": "filtro_filme",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "historico",
+                  "fields": [
+                    {
+                      "name": "filme",
+                      "expression": "`filme`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Filme MovieLens",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "filme",
+                    "queryName": "main_query",
+                    "displayName": "Filme"
+                  }
+                ]
+              },
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "Toy Story (1995) · 1"
+                      }
+                    ]
+                  }
+                }
+              },
+              "disallowAll": true
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "serie_notas",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "historico",
+                  "fields": [
+                    {
+                      "name": "mes",
+                      "expression": "`mes`"
+                    },
+                    {
+                      "name": "nota_acumulada",
+                      "expression": "`nota_acumulada`"
+                    },
+                    {
+                      "name": "filme",
+                      "expression": "`filme`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Nota média acumulada",
+                  "fields": []
+                },
+                "showDescription": true,
+                "description": {
+                  "value": "Cada ponto usa todas as avaliações registradas até o fim daquele mês.",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "mes",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "axis": {
+                    "title": "Mês da avaliação"
+                  }
+                },
+                "y": {
+                  "fieldName": "nota_acumulada",
+                  "scale": {
+                    "type": "quantitative",
+                    "domain": {
+                      "min": 0,
+                      "max": 5
+                    }
+                  },
+                  "axis": {
+                    "title": "Nota em estrelas"
+                  }
+                }
+              },
+              "mark": {
+                "colors": [
+                  "#2563EB"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "serie_volume",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "historico",
+                  "fields": [
+                    {
+                      "name": "mes",
+                      "expression": "`mes`"
+                    },
+                    {
+                      "name": "avaliacoes",
+                      "expression": "`avaliacoes`"
+                    },
+                    {
+                      "name": "filme",
+                      "expression": "`filme`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Avaliações recebidas por mês",
+                  "fields": []
+                },
+                "showDescription": true,
+                "description": {
+                  "value": "Edição MovieLens de 20/07/2023. A série começa no primeiro mês com avaliações.",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "mes",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "axis": {
+                    "title": "Mês da avaliação"
+                  }
+                },
+                "y": {
+                  "fieldName": "avaliacoes",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "Avaliações"
+                  }
+                }
+              },
+              "mark": {
+                "colors": [
+                  "#059669"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "historico_mensal",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "historico",
+                  "fields": [
+                    {
+                      "name": "mes",
+                      "expression": "`mes`"
+                    },
+                    {
+                      "name": "nota_mensal",
+                      "expression": "`nota_mensal`"
+                    },
+                    {
+                      "name": "nota_acumulada",
+                      "expression": "`nota_acumulada`"
+                    },
+                    {
+                      "name": "avaliacoes",
+                      "expression": "`avaliacoes`"
+                    },
+                    {
+                      "name": "avaliacoes_acumuladas",
+                      "expression": "`avaliacoes_acumuladas`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "expression": "mes",
+                      "direction": "DESC"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Detalhe mensal",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "mes",
+                    "displayName": "Mês UTC"
+                  },
+                  {
+                    "fieldName": "nota_mensal",
+                    "displayName": "Nota no mês"
+                  },
+                  {
+                    "fieldName": "nota_acumulada",
+                    "displayName": "Nota acumulada"
+                  },
+                  {
+                    "fieldName": "avaliacoes",
+                    "displayName": "Avaliações no mês"
+                  },
+                  {
+                    "fieldName": "avaliacoes_acumuladas",
+                    "displayName": "Avaliações acumuladas"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ]
+    },
+    {
+      "name": "qualidade",
+      "displayName": "Qualidade das camadas",
+      "layout": [
+        {
+          "widget": {
+            "name": "reconciliacao",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "auditoria",
+                  "fields": [
+                    {
+                      "name": "bronze",
+                      "expression": "`bronze`"
+                    },
+                    {
+                      "name": "silver",
+                      "expression": "`silver`"
+                    },
+                    {
+                      "name": "gold_por_filme",
+                      "expression": "`gold_por_filme`"
+                    },
+                    {
+                      "name": "gold_por_mes",
+                      "expression": "`gold_por_mes`"
+                    },
+                    {
+                      "name": "rejeitadas",
+                      "expression": "`rejeitadas`"
+                    },
+                    {
+                      "name": "copias",
+                      "expression": "`copias`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Da Bronze à Gold",
+                  "fields": []
+                },
+                "showDescription": true,
+                "description": {
+                  "value": "A auditoria compara as contagens nas duas agregações Gold com os eventos válidos da Silver.",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "bronze",
+                    "displayName": "Linhas Bronze"
+                  },
+                  {
+                    "fieldName": "silver",
+                    "displayName": "Eventos válidos Silver"
+                  },
+                  {
+                    "fieldName": "gold_por_filme",
+                    "displayName": "Gold por filme"
+                  },
+                  {
+                    "fieldName": "gold_por_mes",
+                    "displayName": "Gold por mês"
+                  },
+                  {
+                    "fieldName": "rejeitadas",
+                    "displayName": "Linhas rejeitadas"
+                  },
+                  {
+                    "fieldName": "copias",
+                    "displayName": "Cópias consolidadas"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "motivos_rejeicao",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "rejeicoes",
+                  "fields": [
+                    {
+                      "name": "regra",
+                      "expression": "`regra`"
+                    },
+                    {
+                      "name": "linhas",
+                      "expression": "`linhas`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "expression": "linhas",
+                      "direction": "DESC"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Rejeições da Silver por regra",
+                  "fields": []
+                },
+                "showDescription": true,
+                "description": {
+                  "value": "A tabela fica vazia quando todas as linhas passam pelas validações.",
+                  "fields": []
+                }
+              },
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "regra",
+                    "displayName": "Regra de qualidade"
+                  },
+                  {
+                    "fieldName": "linhas",
+                    "displayName": "Linhas de origem"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ]
+    }
+  ]
+}
