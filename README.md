@@ -1,102 +1,42 @@
 # MediaLens Lakehouse
 
-Pipeline de dados em batch que coleta filmes populares da TMDB e mostra **quanto a contagem de votos mudou entre as duas últimas coletas de cada filme**. O projeto roda no Databricks Free Edition com Python, PySpark, SQL, Delta Lake e Lakeflow Jobs.
+Pipeline de engenharia de dados e painel analítico de filmes com **33.832.162 avaliações do MovieLens**. O projeto roda em batch no Databricks Free Edition com Lakeflow Spark Declarative Pipelines, SQL, Delta Lake e AI/BI Dashboards.
 
-Na demonstração, o job executou **Bronze → Silver → Gold** e o painel usou uma Gold com **33 linhas, 33 filmes distintos e 33 pares com contagens comparáveis**. Esses números registram uma execução, pois o catálogo de filmes populares muda com o tempo. As regras automáticas de qualidade e de reprocessamento foram adicionadas depois dessa demonstração e têm testes locais.
+A edição de **20/07/2023** reúne avaliações de 1995 a 2023. Cada evento tem filme, nota de 0,5 a 5 estrelas e horário da avaliação. O painel usa esse horário para mostrar como a nota de um mesmo filme mudou ao longo do tempo.
 
-![Painel do MediaLens com votos anteriores, votos atuais, variação e datas de coleta por filme](image.png)
+## Painel
 
-A métrica é uma diferença absoluta. Leia a variação junto com as datas, já que o intervalo pode mudar por filme. Zero indica que o total ficou igual entre as duas coletas. A amostra representa o recorte de filmes populares retornado pela API.
+| Página | Pergunta |
+| --- | --- |
+| Catálogo e gêneros | Quais gêneros concentram mais avaliações e quais filmes têm as maiores notas entre os que receberam pelo menos 100 avaliações? |
+| Histórico por filme | Como a nota acumulada evoluiu e quantas avaliações o filme recebeu em cada mês? |
+| Qualidade das camadas | Quantas linhas entraram, foram consolidadas ou rejeitadas, e quantos eventos chegaram às duas saídas Gold? |
+
+A visualização de **Toy Story (1995)** ilustra o histórico de 1996 a 2023, com **76.813 avaliações**. O ano de lançamento identifica o filme no catálogo. A série começa na primeira avaliação disponível. [Guia do painel](docs/dashboard.md)
 
 ## Arquitetura
 
 ```mermaid
 flowchart LR
-    A[API TMDB] --> B[Bronze: JSON e metadados]
-    B --> S[Silver: catálogo, snapshots e rejeições]
-    S --> Q[Gold: cálculo e verificação]
-    Q --> G[Delta: variação de votos]
+    A[CSVs MovieLens em volume privado] --> B[Bronze: campos de origem e metadados]
+    B --> S[Silver: catálogo, avaliações, vínculos e rejeições]
+    S --> G[Gold: métricas por filme e histórico mensal]
+    B --> Q[Auditoria das camadas]
+    S --> Q
+    G --> Q
     G --> D[Painel Databricks]
+    Q --> D
 ```
 
-| Camada | Tabelas Delta | Grão e comportamento |
-| --- | --- | --- |
-| Bronze | `workspace.medialens_bronze.tmdb_api_responses` | Uma linha por lote e página. Guarda JSON, hora UTC, origem, endpoint e parâmetros sem credenciais. |
-| Silver | `workspace.medialens_silver.tmdb_movies` | Uma linha por fonte e ID do filme, com os dados válidos mais recentes. |
-| Silver | `workspace.medialens_silver.tmdb_rating_snapshots` | Uma linha por filme, fonte e coleta. Guarda nota original, escala, votos e horário. |
-| Silver | `workspace.medialens_silver.tmdb_rejects` | Registros rejeitados com motivo e referência à carga Bronze. |
-| Gold | `workspace.medialens_gold.tmdb_vote_changes` | Uma linha por filme e fonte com pelo menos duas coletas. Guarda a diferença de votos e os IDs e horários das duas observações. |
-
-O job `tmdb_bronze_ingestion` executa as três camadas em sequência. A Bronze usa o ID da execução do Lakeflow Jobs para reaproveitar o lote confirmado em um reparo. Uma nova execução cria uma nova observação. A Silver reconstrói suas tabelas a partir de uma versão Delta da Bronze. A Gold confere unicidade, cobertura e cálculo antes de substituir a tabela usada pelo painel.
+A Silver preserva homônimos pelo ID MovieLens, consolida duplicatas exatas e registra conflitos e rejeições. A Gold reconcilia a contagem de eventos por filme e por mês com a Silver. O vínculo IMDb vem dos IDs externos do MovieLens e mantém candidatos ambíguos. [Modelo de dados](docs/data-model.md) · [Definição das métricas](docs/metrics.md)
 
 ## Como executar
 
-Pré-requisitos: [CLI autenticado com o perfil `medialens-dev`](docs/databricks-connection.md), compute serverless, acesso de escrita no catálogo `workspace` e token TMDB no segredo `medialens-api/tmdb-read-token`.
+1. Autentique o CLI com o perfil `medialens-dev`. [Conexão ao Databricks](docs/databricks-connection.md)
+2. Crie os schemas, publique o volume e o pipeline, carregue os CSVs e execute a primeira atualização. [Guia MovieLens](docs/movielens.md)
+3. Publique o painel com o ID do seu SQL warehouse. [Guia do painel](docs/dashboard.md)
+4. Rode a suíte com dados sintéticos para verificar as transformações e simular falhas de qualidade. [Testes](tests/README.md)
 
-**1. Publique e execute o job TMDB primeiro.** Na raiz do projeto, use o PowerShell:
+## Fonte
 
-```powershell
-databricks bundle validate -t dev --profile medialens-dev
-databricks bundle deploy -t dev --profile medialens-dev --select jobs.tmdb_bronze_ingestion
-databricks bundle run tmdb_bronze_ingestion -t dev --profile medialens-dev
-```
-
-Espere as três tarefas terminarem. O job cria os schemas Bronze, Silver e Gold e as tabelas TMDB que o MovieLens usa. O padrão é coletar uma página por execução. A tabela de variação de votos fica vazia até haver um filme com duas coletas válidas. Se alguma tarefa falhar, siga o [procedimento de reparo](docs/bronze-tmdb.md#reparar-uma-execução).
-
-```sql
-SELECT title, previous_observed_at, current_observed_at,
-       previous_vote_count, current_vote_count, vote_count_change
-FROM workspace.medialens_gold.tmdb_vote_changes
-ORDER BY vote_count_change DESC NULLS LAST, title;
-```
-
-**2. Instale o MovieLens.** Com a Silver da TMDB pronta, siga o [guia MovieLens](docs/movielens.md#executar) para publicar o volume e o pipeline, carregar os três CSVs e executar a carga. O volume precisa do schema Bronze criado na etapa anterior.
-
-## Testes locais
-
-Os testes usam dados sintéticos, HTTP simulado e SQLite para exercitar a lógica SQL. Rodam sem conta Databricks e sem segredos. No PowerShell:
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m unittest discover -s tests -v
-```
-
-O workflow de CI executa a mesma suíte no GitHub Actions. A execução no workspace continua sendo necessária para validar o ambiente serverless, a escrita em Delta e as permissões.
-
-## Repositório
-
-- `src/medialens/` contém a coleta HTTP, as transformações e a métrica.
-- `notebooks/` contém os pontos de entrada das tarefas no Databricks.
-- `resources/` declara o job e as dependências no bundle.
-- `tests/` contém os testes locais com dados sintéticos.
-- [Arquitetura e recuperação](docs/architecture.md), [modelo](docs/data-model.md) e [métrica](docs/metrics.md).
-
-## Integração MovieLens
-
-O bundle também define um pipeline Lakeflow para a edição MovieLens Latest Full de 2023-07-20. Ele processa catálogo, avaliações e vínculos em três camadas, preserva os dois provedores e mostra a cobertura do cruzamento por ID. Veja o [guia de carga, execução e conferência](docs/movielens.md).
-
-Na primeira execução, foram reconciliadas **33.832.162 avaliações** entre Bronze, Silver e Gold, sem rejeições. A Gold agregou **83.239 filmes** do MovieLens. No recorte TMDB daquela execução, **3 de 33 filmes** tinham correspondência confirmada com avaliações MovieLens.
-
-### O que muda nos dados em cada camada
-
-| Camada | Exemplo com *Toy Story* (`movie_id = 1`) |
-| --- | --- |
-| Bronze | Preserva cada linha do CSV, com IDs, nota e timestamp em texto, além do arquivo de origem. |
-| Silver | Converte os IDs para inteiros, a nota para decimal e o horário para timestamp. Valida a escala de 0,5 a 5, consolida cópias exatas e separa eventos inválidos ou conflitantes. |
-| Gold | Resume todas as avaliações válidas em uma linha por filme e edição, com média, contagem e datas da primeira e da última avaliação. |
-
-A Bronze e a Silver tiveram a mesma contagem porque essa edição passou pelas regras sem rejeições ou cópias exatas. A mudança está no formato e na validação dos eventos. Na Gold, **83.239** é a contagem de filmes e **33.832.162** é a soma das avaliações desses filmes.
-
-A auditoria `workspace.medialens_gold.movielens_quality` verifica os totais e o grão da cobertura a cada atualização. O [guia de operação](docs/operacao-movielens.md) traz as consultas para o painel e o procedimento para investigar falhas.
-
-## Próxima evolução
-
-Coletar snapshots em dias diferentes com a TMDB para aumentar a profundidade do histórico. No MovieLens, medir a cobertura do cruzamento e o custo do primeiro processamento completo. Os dois fluxos rodam em batch. Veja [decisões técnicas](docs/decisions.md).
-
-## Créditos
-
-Dados do painel fornecidos pela [TMDB](https://www.themoviedb.org/).
-
-> This product uses the TMDB API but is not endorsed or certified by TMDB.
-
-Consulte [fontes e condições de uso](docs/data-sources.md) antes de compartilhar o painel publicamente ou ampliar a coleta.
+MovieLens Latest Full, GroupLens Research. Cite Harper e Konstan (2015), *The MovieLens Datasets: History and Context*. Os CSVs e IDs de usuários ficam no ambiente privado. [Documentação e licença da edição](https://files.grouplens.org/datasets/movielens/ml-latest-README.html) · [Citação](https://doi.org/10.1145/2827872)
